@@ -35,6 +35,18 @@ int main (int argc, char *argv[])
    unsigned long int  local_prime_size;
 
 
+   //add on variable
+   unsigned long long int    low_value_begin;    /* Lowest value for first set */
+   unsigned long long int    high_value_begin;    /* highest value for first set */
+   unsigned long int    size_begin;         /* Elements in begin set */
+   char  *marked_begin;       /* Portion of 2,...,'n' */
+   unsigned long int *prime_list;
+   unsigned long int *first_list;
+   
+   int j;
+
+
+   //init for MPI
    MPI_Init (&argc, &argv);
 
    /* Start the timer */
@@ -53,25 +65,204 @@ int main (int argc, char *argv[])
    n = atoll(argv[1]);
 
    /* Figure out this process's share of the array, as
-      well as the integers represented by the first and
-      last array elements */
+       well as the integers represented by the first and
+       last array elements */
+
+
+   //calculate the low value and high value and the size
+   low_value = floor(3 + id * (n - 2) / p);
+   if(!(low_value % 2)) low_value--;
+   low_value_begin = 3;
+
+
+   high_value = floor(2 + (id + 1) * (n - 2) / p);
+   if(!(high_value % 2)) high_value++;
+   high_value_begin = floor(2 + (n - 2) / p);
+
+
+   size = (high_value - low_value + 1)/2;
+   size_begin = (high_value_begin -low_value_begin +1)/2;
+   
+
+   //calculate the init set size
+   proc0_size = ((n - 2) / p)/2;
+
+   if ((3 + proc0_size) < (int) sqrt((double) n)) {
+      if (!id) printf("Too many processes\n");
+      MPI_Finalize();
+      exit(1);
+   }
+
+   /* Allocate this process's share of the array. */
+
+   //use for marking the prime for current process
+   marked = (char *) malloc(size);
+
+   //use for marking the prime in the init set, which to calcule the prime
+   marked_begin = (char *) malloc(size);
+
+   //Check is the allocation work correctly
+   if (marked == NULL) {
+      printf("Cannot allocate enough memory\n");
+      MPI_Finalize();
+      exit(1);
+   }
+   if (marked_begin == NULL) {
+      printf("Cannot allocate enough memory\n");
+      MPI_Finalize();
+      exit(1);
+   }
+
+    //init the marked array to all 0
+   for (i = 0; i < size; i++) marked[i] = 0;
+   for (i = 0; i < size_begin; i++) marked_begin[i] = 0;
+
+
+   index = 0;
+
+   int prime_size;
+   prime_size = 10000;
+
+   
+   //array for prime
+   register unsigned long int *a;
+
+   a = (unsigned long int *) malloc(8*prime_size);
+
+
+   
+   //array for first number
+   register unsigned long int *f;
+
+   f = (unsigned long int *) malloc(8*prime_size);
+
+
+   //to check how many number of prime to check in each iteration, currently set to 100000 becasue that is sqrt(n), the maximum number of prime possible
+   int block_size;
+   block_size = 100000;
+
+   
+
+   
+   //check allocation statas for a and f
+   if (a == NULL) {
+        printf("Cannot allocate enough memory\n");
+        MPI_Finalize();
+        exit(1);
+   }
+
+   if (f == NULL) {
+      printf("Cannot allocate enough memory\n");
+      MPI_Finalize();
+      exit(1);
+   }
+
+   // use for debug and output debug info
+   unsigned long int list_size;
+   list_size = 0;
+
+
+   //find all the prime in the beginning
+   prime = 3;
+   do {
+
+      //store the prime into the array for prime
+      a[list_size%prime_size] = prime;
+
+      
+      //use find the first index for this array
+      if(id != 0){
+         if (prime * prime > low_value)
+            first =( prime * prime - low_value ) /2;
+         else {
+            if (!(low_value % prime)) first = 0;
+            else{
+               if((low_value % prime)%2 == 0){
+                  first = (2 * prime - low_value % prime) / 2;
+               }
+               else{
+                  first = (prime - low_value % prime)/2;
+               }
+            }
+         }
+
+         //load the result of the first into the array
+         f[list_size%prime_size] = first;
+         list_size++;
+
+         
+
+      }
+
+
+      //process the init list to find all the next prime to process
+      first =( prime * prime - low_value_begin ) /2;
+        
+      for (i = first; i < size; i += prime) marked_begin[i] = 1;
+
+      while (marked_begin[++index]);
+      prime = index*2 + 3;
+
+   } while (prime * prime <= n);
+
+
+   
+   //start the marking process
+   i = low_value + block_size;
+   while(i <= high_value){
+      
+
+      for(j = 0; j < list_size%prime_size; j++){
+         for(;(f[j] <i) &&(f[j] < size); ){
+            marked[f[j]] = 1;
+            f[j] += a[j];
+         }
+      }
+      
+
+
+      if(i == high_value){
+         i++;
+      }
+      else{
+         i = ((i + block_size) > high_value ) ? high_value : i + block_size;
+      }
+   }
+
+   //count the number of prime
+   count = 0;
+
+   //0 process skip the mark array because not needed, so just read the result from the marked_begin
+   if(id == 0){
+      for (i = 0; i < size; i++)
+         if (!marked_begin[i]) count++;
+   }
+   else{
+      for (i = 0; i < size; i++)
+         if (!marked[i]) count++;
+   }
+   
+   if (p > 1)
+      MPI_Reduce(&count, &global_count, 1, MPI_INT, MPI_SUM,
+                  0, MPI_COMM_WORLD);
+
+
+
+
+
+   //add the prime number 2 back
+   global_count++;
+
+
+
+
+
+
+
 
    /* Stop the timer */
 
    elapsed_time += MPI_Wtime();
-
-   /* Add you code here  */
-
-
-
-
-
-
-
-
-
-
-
 
 
    /* Print the results */
